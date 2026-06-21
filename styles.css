@@ -1,0 +1,72 @@
+/* 阅读区的护眼/字体样式由 main.ts 动态注入，且限定在 .mod-root 内，不影响侧栏。
+   下面是浮动控制按钮的静态样式（全平台通用）。 */
+
+/* 容器常驻 DOM，靠子按钮的显隐来决定是否可见 */
+.readit-controls {
+  display: flex;
+  gap: 10px;
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9999;
+}
+
+/* 默认全部隐藏 */
+.readit-controls .readit-btn {
+  display: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  background: var(--background-secondary-alt, rgba(120, 120, 120, 0.55));
+  color: var(--text-normal, #2b2b2b);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 非阅读模式 + 开启悬浮入口：只显示入口按钮 */
+body.readit-floating-entry:not(.readit-active) .readit-controls .readit-enter {
+  display: flex;
+}
+
+/* 阅读模式：显示工具按钮 */
+body.readit-active .readit-controls .readit-tool {
+  display: flex;
+}
+
+/* “慢/快”调速按钮：仅在自动滚动进行时显示 */
+body.readit-autoscroll .readit-controls .readit-speed {
+  display: flex;
+}
+
+.readit-controls .readit-btn:hover,
+.readit-controls .readit-btn:active {
+  opacity: 1;
+}
+
+/* 中文文字按钮（入库 / 已读）字号小一点以容纳两字 */
+.readit-controls .readit-text {
+  font-size: 14px;
+}
+
+/* 标签已开启时的高亮状态 */
+.readit-controls .readit-btn.is-on {
+  background: var(--interactive-accent, #4a8a6f);
+  color: var(--text-on-accent, #ffffff);
+  opacity: 1;
+}
+
+/* 移动端把按钮做大一点，方便点按 */
+body.is-mobile .readit-controls .readit-btn {
+  width: 52px;
+  height: 52px;
+  font-size: 18px;
+}
