@@ -46,7 +46,8 @@ var DEFAULT_SETTINGS = {
   fullscreenOnEnter: false,
   floatingEntry: false,
   trackProgress: true,
-  scrollSpeed: 40
+  scrollSpeed: 40,
+  forcePreview: true
 };
 var BODY_CLASS = "readit-active";
 var ReaditPlugin = class extends import_obsidian.Plugin {
@@ -132,16 +133,20 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
       return;
     const left = this.leftSplit();
     const right = this.rightSplit();
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView);
     this.prevState = {
       leftCollapsed: (_a = left == null ? void 0 : left.collapsed) != null ? _a : false,
       rightCollapsed: (_b = right == null ? void 0 : right.collapsed) != null ? _b : false,
-      wasFullscreen: !!document.fullscreenElement
+      wasFullscreen: !!document.fullscreenElement,
+      viewMode: view ? view.getState().mode : null
     };
     document.body.classList.add(BODY_CLASS);
     if (this.settings.hideSidebars) {
       (_c = left == null ? void 0 : left.collapse) == null ? void 0 : _c.call(left);
       (_d = right == null ? void 0 : right.collapse) == null ? void 0 : _d.call(right);
     }
+    if (this.settings.forcePreview)
+      this.setViewMode(view, "preview");
     if (this.settings.fullscreenOnEnter)
       this.enterFullscreen();
     this.updateTagButtons();
@@ -159,6 +164,9 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
           (_b = (_a = this.leftSplit()) == null ? void 0 : _a.expand) == null ? void 0 : _b.call(_a);
         if (!prev.rightCollapsed)
           (_d = (_c = this.rightSplit()) == null ? void 0 : _c.expand) == null ? void 0 : _d.call(_c);
+      }
+      if (this.settings.forcePreview && prev.viewMode && prev.viewMode !== "preview") {
+        this.setViewMode(this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView), prev.viewMode);
       }
       if (!prev.wasFullscreen)
         this.exitFullscreen();
@@ -185,6 +193,16 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
     var _a;
     if (document.fullscreenElement)
       (_a = document.exitFullscreen) == null ? void 0 : _a.call(document);
+  }
+  /** 切换 Markdown 视图的编辑/阅读模式（preview=只读阅读，source=编辑） */
+  setViewMode(view, mode) {
+    if (!view)
+      return;
+    const state = view.getState();
+    if (state.mode === mode)
+      return;
+    state.mode = mode;
+    view.setState(state, { history: false });
   }
   // ===================== 浮动按钮 =====================
   /**
@@ -357,6 +375,9 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
   }
   async onFileOpen(file) {
     this.stopAutoScroll();
+    if (file && this.isReading() && this.settings.forcePreview) {
+      this.setViewMode(this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView), "preview");
+    }
     if (!this.settings.trackProgress) {
       this.trackedFile = file;
       this.updateTagButtons();
@@ -536,6 +557,12 @@ var ReaditSettingTab = class extends import_obsidian.PluginSettingTab {
     new import_obsidian.Setting(containerEl).setName("\u8BB0\u5F55\u9605\u8BFB\u8FDB\u5EA6").setDesc(`\u628A\u9605\u8BFB\u8FDB\u5EA6\uFF08\u767E\u5206\u6BD4\uFF09\u5199\u5165\u6587\u6863\u5934\u90E8\u7684 ${PROGRESS_KEY} \u5B57\u6BB5\uFF0C\u4E0B\u6B21\u6253\u5F00\u81EA\u52A8\u8DF3\u5230\u4E0A\u6B21\u4F4D\u7F6E`).addToggle(
       (tg) => tg.setValue(this.plugin.settings.trackProgress).onChange(async (v) => {
         this.plugin.settings.trackProgress = v;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerEl).setName("\u53EA\u8BFB\u9605\u8BFB\u89C6\u56FE").setDesc("\u8FDB\u5165\u6C89\u6D78\u9605\u8BFB\u65F6\u81EA\u52A8\u5207\u6362\u4E3A\u53EA\u8BFB\u7684\u9605\u8BFB\u89C6\u56FE\uFF08preview\uFF09\uFF0C\u907F\u514D\u5728\u624B\u673A\u4E0A\u8BEF\u89E6\u7F16\u8F91\uFF1B\u9000\u51FA\u65F6\u6062\u590D\u8FDB\u5165\u524D\u7684\u6A21\u5F0F").addToggle(
+      (tg) => tg.setValue(this.plugin.settings.forcePreview).onChange(async (v) => {
+        this.plugin.settings.forcePreview = v;
         await this.plugin.saveSettings();
       })
     );

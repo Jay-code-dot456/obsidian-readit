@@ -31,6 +31,7 @@ interface ReaditSettings {
   floatingEntry: boolean;      // 非沉浸阅读时常驻一个悬浮入口按钮
   trackProgress: boolean;      // 是否记录并恢复阅读进度
   scrollSpeed: number;         // 自动滚动速度（像素/秒）
+  forcePreview: boolean;       // 进入沉浸阅读时强制切换为只读阅读视图（preview）
 }
 
 // 黑体优先、跨平台（含安卓）的字体回退链：PingFang(苹果)/鸿蒙/思源黑体(安卓)/雅黑(Win)
@@ -51,6 +52,7 @@ const DEFAULT_SETTINGS: ReaditSettings = {
   floatingEntry: false,
   trackProgress: true,
   scrollSpeed: 40,
+  forcePreview: true,
 };
 
 const BODY_CLASS = "readit-active";
@@ -60,6 +62,7 @@ interface PrevState {
   leftCollapsed: boolean;
   rightCollapsed: boolean;
   wasFullscreen: boolean;
+  viewMode: string | null; // 进入前的视图模式（"source"/"preview"），用于退出时恢复
 }
 
 export default class ReaditPlugin extends Plugin {
@@ -161,16 +164,20 @@ export default class ReaditPlugin extends Plugin {
     if (this.isReading()) return;
     const left = this.leftSplit();
     const right = this.rightSplit();
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     this.prevState = {
       leftCollapsed: left?.collapsed ?? false,
       rightCollapsed: right?.collapsed ?? false,
       wasFullscreen: !!document.fullscreenElement,
+      viewMode: view ? view.getState().mode : null,
     };
     document.body.classList.add(BODY_CLASS);
     if (this.settings.hideSidebars) {
       left?.collapse?.();
       right?.collapse?.();
     }
+    // 切到只读阅读视图（preview），避免在手机上误触编辑
+    if (this.settings.forcePreview) this.setViewMode(view, "preview");
     if (this.settings.fullscreenOnEnter) this.enterFullscreen();
     this.updateTagButtons();
   }
@@ -184,6 +191,10 @@ export default class ReaditPlugin extends Plugin {
       if (this.settings.hideSidebars) {
         if (!prev.leftCollapsed) this.leftSplit()?.expand?.();
         if (!prev.rightCollapsed) this.rightSplit()?.expand?.();
+      }
+      // 恢复进入前的视图模式（仅当进入前并非只读预览时才切回）
+      if (this.settings.forcePreview && prev.viewMode && prev.viewMode !== "preview") {
+        this.setViewMode(this.app.workspace.getActiveViewOfType(MarkdownView), prev.viewMode);
       }
       if (!prev.wasFullscreen) this.exitFullscreen();
     }
@@ -199,6 +210,15 @@ export default class ReaditPlugin extends Plugin {
   private rightSplit(): any { return (this.app.workspace as any).rightSplit; }
   private enterFullscreen() { document.documentElement.requestFullscreen?.(); }
   private exitFullscreen() { if (document.fullscreenElement) document.exitFullscreen?.(); }
+
+  /** 切换 Markdown 视图的编辑/阅读模式（preview=只读阅读，source=编辑） */
+  private setViewMode(view: MarkdownView | null, mode: string) {
+    if (!view) return;
+    const state = view.getState();
+    if (state.mode === mode) return;
+    state.mode = mode;
+    view.setState(state, { history: false } as any);
+  }
 
   // ===================== 浮动按钮 =====================
   /**
@@ -368,6 +388,10 @@ export default class ReaditPlugin extends Plugin {
 
   private async onFileOpen(file: TFile | null) {
     this.stopAutoScroll(); // 切换文档时停止自动滚动
+    // 沉浸阅读中切换文档：新文档同样保持只读阅读视图
+    if (file && this.isReading() && this.settings.forcePreview) {
+      this.setViewMode(this.app.workspace.getActiveViewOfType(MarkdownView), "preview");
+    }
     if (!this.settings.trackProgress) {
       this.trackedFile = file;
       this.updateTagButtons();
@@ -578,6 +602,16 @@ class ReaditSettingTab extends PluginSettingTab {
       .addToggle((tg) =>
         tg.setValue(this.plugin.settings.trackProgress).onChange(async (v) => {
           this.plugin.settings.trackProgress = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("只读阅读视图")
+      .setDesc("进入沉浸阅读时自动切换为只读的阅读视图（preview），避免在手机上误触编辑；退出时恢复进入前的模式")
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.forcePreview).onChange(async (v) => {
+          this.plugin.settings.forcePreview = v;
           await this.plugin.saveSettings();
         })
       );
