@@ -102,6 +102,22 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
         this.exitReadingMode();
       }
     });
+    this.registerDomEvent(
+      document,
+      "dblclick",
+      (e) => {
+        var _a;
+        if (!this.isReading() || !this.settings.forcePreview)
+          return;
+        const target = e.target;
+        if (target && target.closest(".markdown-reading-view, .markdown-preview-view")) {
+          e.preventDefault();
+          e.stopPropagation();
+          (_a = e.stopImmediatePropagation) == null ? void 0 : _a.call(e);
+        }
+      },
+      { capture: true }
+    );
     this.addSettingTab(new ReaditSettingTab(this.app, this));
     this.app.workspace.onLayoutReady(() => this.onFileOpen(this.app.workspace.getActiveFile()));
   }

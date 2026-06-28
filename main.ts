@@ -133,6 +133,23 @@ export default class ReaditPlugin extends Plugin {
       }
     });
 
+    // 拦截阅读视图“双击正文进入编辑”的内置行为（移动端尤其容易误触）：
+    // 沉浸阅读 + 只读模式下，在捕获阶段吞掉阅读视图内的双击，使其无法切到编辑。
+    this.registerDomEvent(
+      document,
+      "dblclick",
+      (e: MouseEvent) => {
+        if (!this.isReading() || !this.settings.forcePreview) return;
+        const target = e.target as HTMLElement | null;
+        if (target && target.closest(".markdown-reading-view, .markdown-preview-view")) {
+          e.preventDefault();
+          e.stopPropagation();
+          (e as MouseEvent & { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.();
+        }
+      },
+      { capture: true }
+    );
+
     this.addSettingTab(new ReaditSettingTab(this.app, this));
 
     // 启动时若已有打开的文档，绑定其进度
