@@ -57,7 +57,11 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
     this.kbaseBtn = null;
     this.readedBtn = null;
     this.autoBtn = null;
+    this.deleteBtn = null;
     this.prevState = null;
+    // ---- 删除二次确认状态 ----
+    this.deleteArmed = false;
+    this.deleteArmTimer = null;
     // ---- 自动滚动状态 ----
     this.autoScrollRAF = null;
     this.scrollPos = 0;
@@ -123,6 +127,7 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
   }
   async onunload() {
     var _a, _b;
+    this.disarmDelete();
     this.stopAutoScroll();
     await this.flushProgress();
     this.unbindScroll();
@@ -171,6 +176,7 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
     var _a, _b, _c, _d;
     if (!this.isReading())
       return;
+    this.disarmDelete();
     this.stopAutoScroll();
     document.body.classList.remove(BODY_CLASS);
     const prev = this.prevState;
@@ -224,7 +230,7 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
   /**
    * 右下角浮动按钮（由 CSS 控制显隐）：
    * - 非沉浸阅读：仅显示入口 📖（可在设置关闭）
-   * - 沉浸阅读：A− / A+ / 入库 / 已读 / ✕
+   * - 沉浸阅读：A− / A+ / 入库 / 已读 / 🗑 / ✕
    */
   createControls() {
     const bar = document.createElement("div");
@@ -251,6 +257,7 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
     makeBtn("\u5FEB", "\u52A0\u901F", "readit-speed readit-text", () => this.changeScrollSpeed(10));
     this.kbaseBtn = makeBtn("\u5165\u5E93", `\u5207\u6362 ${KBASE_TAG} \u6807\u7B7E`, "readit-tool readit-text", () => this.toggleTag(KBASE_TAG));
     this.readedBtn = makeBtn("\u5DF2\u8BFB", `\u5207\u6362 ${READED_TAG} \u6807\u7B7E`, "readit-tool readit-text", () => this.toggleTag(READED_TAG));
+    this.deleteBtn = makeBtn("\u{1F5D1}", "\u5220\u9664\u5F53\u524D\u6587\u4EF6", "readit-tool readit-danger", () => this.deleteCurrentFile());
     makeBtn("\u2715", "\u9000\u51FA\u6C89\u6D78\u9605\u8BFB", "readit-tool", () => this.exitReadingMode());
     document.body.appendChild(bar);
     this.controlsEl = bar;
@@ -377,6 +384,46 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
     (_a = this.kbaseBtn) == null ? void 0 : _a.classList.toggle("is-on", tags.includes(KBASE_TAG));
     (_b = this.readedBtn) == null ? void 0 : _b.classList.toggle("is-on", tags.includes(READED_TAG));
   }
+  // ===================== 删除当前文件 =====================
+  /** 复位删除按钮的“待确认”状态 */
+  disarmDelete() {
+    if (this.deleteArmTimer != null) {
+      window.clearTimeout(this.deleteArmTimer);
+      this.deleteArmTimer = null;
+    }
+    this.deleteArmed = false;
+    if (this.deleteBtn) {
+      this.deleteBtn.textContent = "\u{1F5D1}";
+      this.deleteBtn.classList.remove("is-armed");
+    }
+  }
+  /**
+   * 删除当前文件：需二次确认。首次点击进入“待确认”（按钮变红），
+   * 约 3 秒内再次点击才真正删除；删除走回收站（尊重用户的删除设置，可恢复），
+   * 删完退出沉浸阅读。
+   */
+  async deleteCurrentFile() {
+    var _a;
+    const file = this.app.workspace.getActiveFile();
+    if (!file)
+      return;
+    if (!this.deleteArmed) {
+      this.deleteArmed = true;
+      (_a = this.deleteBtn) == null ? void 0 : _a.classList.add("is-armed");
+      new import_obsidian.Notice(`\u518D\u6B21\u70B9\u51FB\u5220\u9664\u300C${file.basename}\u300D`, 3e3);
+      this.deleteArmTimer = window.setTimeout(() => this.disarmDelete(), 3e3);
+      return;
+    }
+    this.disarmDelete();
+    const name = file.basename;
+    this.stopAutoScroll();
+    this.unbindScroll();
+    this.trackedFile = null;
+    await this.app.fileManager.trashFile(file);
+    if (this.isReading())
+      this.exitReadingMode();
+    new import_obsidian.Notice(`\u5DF2\u5220\u9664\u300C${name}\u300D`, 2e3);
+  }
   // ===================== 阅读进度 =====================
   /** 取当前活动 Markdown 视图的滚动容器（阅读视图 / 编辑视图通用） */
   getScroller() {
@@ -391,6 +438,7 @@ var ReaditPlugin = class extends import_obsidian.Plugin {
   }
   async onFileOpen(file) {
     this.stopAutoScroll();
+    this.disarmDelete();
     if (file && this.isReading() && this.settings.forcePreview) {
       this.setViewMode(this.app.workspace.getActiveViewOfType(import_obsidian.MarkdownView), "preview");
     }

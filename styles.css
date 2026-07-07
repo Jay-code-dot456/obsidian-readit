@@ -64,6 +64,13 @@ body.readit-autoscroll .readit-controls .readit-speed {
   opacity: 1;
 }
 
+/* 删除按钮：常态与其他工具一致，处于“待确认”时变红警示 */
+.readit-controls .readit-danger.is-armed {
+  background: var(--text-error, #d64545);
+  color: #ffffff;
+  opacity: 1;
+}
+
 /* 移动端把按钮做大一点，方便点按 */
 body.is-mobile .readit-controls .readit-btn {
   width: 52px;

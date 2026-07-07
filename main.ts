@@ -72,7 +72,12 @@ export default class ReaditPlugin extends Plugin {
   private kbaseBtn: HTMLButtonElement | null = null;
   private readedBtn: HTMLButtonElement | null = null;
   private autoBtn: HTMLButtonElement | null = null;
+  private deleteBtn: HTMLButtonElement | null = null;
   private prevState: PrevState | null = null;
+
+  // ---- 删除二次确认状态 ----
+  private deleteArmed = false;
+  private deleteArmTimer: number | null = null;
 
   // ---- 自动滚动状态 ----
   private autoScrollRAF: number | null = null;
@@ -157,6 +162,7 @@ export default class ReaditPlugin extends Plugin {
   }
 
   async onunload() {
+    this.disarmDelete();
     this.stopAutoScroll();
     await this.flushProgress();
     this.unbindScroll();
@@ -201,6 +207,7 @@ export default class ReaditPlugin extends Plugin {
 
   exitReadingMode() {
     if (!this.isReading()) return;
+    this.disarmDelete();
     this.stopAutoScroll();
     document.body.classList.remove(BODY_CLASS);
     const prev = this.prevState;
@@ -241,7 +248,7 @@ export default class ReaditPlugin extends Plugin {
   /**
    * 右下角浮动按钮（由 CSS 控制显隐）：
    * - 非沉浸阅读：仅显示入口 📖（可在设置关闭）
-   * - 沉浸阅读：A− / A+ / 入库 / 已读 / ✕
+   * - 沉浸阅读：A− / A+ / 入库 / 已读 / 🗑 / ✕
    */
   private createControls() {
     const bar = document.createElement("div");
@@ -272,6 +279,7 @@ export default class ReaditPlugin extends Plugin {
     makeBtn("快", "加速", "readit-speed readit-text", () => this.changeScrollSpeed(10));
     this.kbaseBtn = makeBtn("入库", `切换 ${KBASE_TAG} 标签`, "readit-tool readit-text", () => this.toggleTag(KBASE_TAG));
     this.readedBtn = makeBtn("已读", `切换 ${READED_TAG} 标签`, "readit-tool readit-text", () => this.toggleTag(READED_TAG));
+    this.deleteBtn = makeBtn("🗑", "删除当前文件", "readit-tool readit-danger", () => this.deleteCurrentFile());
     makeBtn("✕", "退出沉浸阅读", "readit-tool", () => this.exitReadingMode());
 
     document.body.appendChild(bar);
@@ -391,6 +399,50 @@ export default class ReaditPlugin extends Plugin {
     this.readedBtn?.classList.toggle("is-on", tags.includes(READED_TAG));
   }
 
+  // ===================== 删除当前文件 =====================
+  /** 复位删除按钮的“待确认”状态 */
+  private disarmDelete() {
+    if (this.deleteArmTimer != null) {
+      window.clearTimeout(this.deleteArmTimer);
+      this.deleteArmTimer = null;
+    }
+    this.deleteArmed = false;
+    if (this.deleteBtn) {
+      this.deleteBtn.textContent = "🗑";
+      this.deleteBtn.classList.remove("is-armed");
+    }
+  }
+
+  /**
+   * 删除当前文件：需二次确认。首次点击进入“待确认”（按钮变红），
+   * 约 3 秒内再次点击才真正删除；删除走回收站（尊重用户的删除设置，可恢复），
+   * 删完退出沉浸阅读。
+   */
+  private async deleteCurrentFile() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) return;
+
+    if (!this.deleteArmed) {
+      this.deleteArmed = true;
+      this.deleteBtn?.classList.add("is-armed");
+      new Notice(`再次点击删除「${file.basename}」`, 3000);
+      this.deleteArmTimer = window.setTimeout(() => this.disarmDelete(), 3000);
+      return;
+    }
+
+    // 二次确认：执行删除
+    this.disarmDelete();
+    const name = file.basename;
+    // 先停止对该文件的追踪，避免删除后 flushProgress 再去写已删文件的 frontmatter
+    this.stopAutoScroll();
+    this.unbindScroll();
+    this.trackedFile = null;
+    // trashFile 尊重用户“删除文件”偏好（系统回收站 / 库内 .trash / 永久删除）
+    await this.app.fileManager.trashFile(file);
+    if (this.isReading()) this.exitReadingMode();
+    new Notice(`已删除「${name}」`, 2000);
+  }
+
   // ===================== 阅读进度 =====================
   /** 取当前活动 Markdown 视图的滚动容器（阅读视图 / 编辑视图通用） */
   private getScroller(): HTMLElement | null {
@@ -405,6 +457,7 @@ export default class ReaditPlugin extends Plugin {
 
   private async onFileOpen(file: TFile | null) {
     this.stopAutoScroll(); // 切换文档时停止自动滚动
+    this.disarmDelete();   // 切换文档时复位删除“待确认”状态
     // 沉浸阅读中切换文档：新文档同样保持只读阅读视图
     if (file && this.isReading() && this.settings.forcePreview) {
       this.setViewMode(this.app.workspace.getActiveViewOfType(MarkdownView), "preview");
